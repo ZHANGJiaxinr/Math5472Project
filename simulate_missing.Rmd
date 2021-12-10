@@ -1,0 +1,91 @@
+---
+title: "Simulate Missing data"
+author: "Jiaxin, ZHANG"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Simulation Setting
+Here we will try to fill the missing data for a black and white image
+![This is the original image](./black_white_template.jpeg)
+
+
+Then we remove a block from this image, we get the following image (the white block in the center)
+```{r}
+library(jpeg)
+source("library.R")
+
+img <- readJPEG("black_white_template.jpeg")
+matrix <- img[,,1]
+# Missing Range
+MR1 = (150:200)
+MR2 = (200:250)
+# Remove block
+matrix     <- img[,,1]
+matrixMiss <- matrix
+matrixMiss[MR1,MR2] <- 1
+matrixMissImg       <- rgb(matrixMiss, matrixMiss, matrixMiss)
+dim(matrixMissImg)  <- dim(matrix)
+matrixMiss[MR1,MR2] <- NA
+pixmatplot(matrixMissImg)
+```
+
+## EBMF VS SVD impute
+
+Then we will try fill the missing data with EBMF and SVD impute
+
+```{r pressure}
+library(bcv)
+library(abind)
+library(flashr)
+svdNew_array_k = cbind(2,3,4,5,6,8,10)
+svdNew_array_maxiter = cbind(400,600,1000,1200,1400,1600,2000)
+svdNew_array_matrix = NULL
+
+# applying SVDImpute
+svd_error = c()
+for (i in (1:7)) {
+    temp = impute.svd(matrixMiss, k = svdNew_array_k[i], maxiter=svdNew_array_maxiter[i])$x
+    svdNew_array_matrix = abind(svdNew_array_matrix, temp, along=3)
+    svdNew_array_matrix[MR1,MR2,i]=rescaleRGB(svdNew_array_matrix[MR1,MR2,i])
+    svd_error = cbind(svd_error, mean((svdNew_array_matrix[,,i] - matrix)^2))
+}
+
+# applying EBMF flash
+febmf = flash(matrixMiss, verbose=FALSE)
+matrixEbmfNew = flash_fill(matrixMiss, febmf)
+matrixEbmfNew[MR1,MR2] = rescaleRGB(matrixEbmfNew[MR1,MR2])
+
+ebmf_error = mean((matrixEbmfNew - matrix)^2)
+par(mar=c(5.1,4.1,4.1,2.1))
+plot((1:8), cbind(svd_error, ebmf_error), xaxt="n", ylab="error", xlab="methods", axes = TRUE)
+axis(1, at=1:8, labels=c(paste0("svd_k",c(2:6,8,10)), "ebmf"))
+
+print(paste("Factor from EBMF",febmf$nfactors))
+svdNew_array_k = cbind(svdNew_array_k, febmf$nfactors)
+svdNew_array_maxiter = cbind(svdNew_array_k, febmf$nfactors * 200)
+temp = impute.svd(matrixMiss, k = svdNew_array_k[8], maxiter=svdNew_array_maxiter[i])$x
+svdNew_array_matrix = abind(svdNew_array_matrix, temp, along=3)
+svdNew_array_matrix[MR1,MR2,8]=rescaleRGB(svdNew_array_matrix[MR1,MR2,8])
+svd_error = cbind(svd_error, mean((svdNew_array_matrix[,,8] - matrix)^2))
+
+plot((1:9), cbind(svd_error, ebmf_error), xaxt="n", ylab="error", xlab="methods", axes = TRUE)
+axis(1, at=1:9, labels=c(paste0("svd_k",c(2:6,8,10,51)), "ebmf"))
+
+for (i in (1:8)) {
+    svdImg <- rgb(svdNew_array_matrix[,,i], svdNew_array_matrix[,,i], svdNew_array_matrix[,,i])
+    dim(svdImg) <- dim(matrix)
+    svd_error = cbind(svd_error, mean((svdNew_array_matrix[,,i] - matrix)^2))
+    print(paste("svd_k", svdNew_array_k[i]))
+    pixmatplot(svdImg)
+}
+
+# print image for EBMF
+matrixImg <- rgb(matrixEbmfNew, matrixEbmfNew, matrixEbmfNew)
+dim(matrixImg) <- dim(matrix)
+pixmatplot(matrixImg)
+```
+
